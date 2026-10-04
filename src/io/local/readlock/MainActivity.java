@@ -21,6 +21,8 @@ import java.util.Calendar;
 
 public class MainActivity extends Activity {
 
+    private static volatile MainActivity activeInstance;
+
     private LinearLayout permList;
     private TextView statusCard;
     private TextView footer;
@@ -28,6 +30,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        activeInstance = this;
         setContentView(R.layout.activity_main);
 
         statusCard = (TextView) findViewById(R.id.status_card);
@@ -50,16 +53,33 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        activeInstance = this;
         ensureServiceRunning();
         refreshStatus();
         buildPermRows();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (activeInstance == this) {
+            activeInstance = null;
+        }
+        super.onDestroy();
     }
 
     private void ensureServiceRunning() {
         startForegroundService(new Intent(this, ReadLockService.class));
     }
 
+    public static void updateFromService(long minutes, boolean locked) {
+        MainActivity a = activeInstance;
+        if (a != null) {
+            a.runOnUiThread(a::refreshStatus);
+        }
+    }
+
     private void refreshStatus() {
+        if (statusCard == null) return;
         long m = ReadLockService.getCachedMinutes();
         boolean usageOk = ReadLockService.isUsagePermissionOk();
         String line1;
@@ -90,6 +110,7 @@ public class MainActivity extends Activity {
     // ---------- 权限引导 ----------
 
     private void buildPermRows() {
+        if (permList == null) return;
         permList.removeAllViews();
         addPermRow("使用情况访问（统计读书时长）", usageStatsGranted(),
                 v -> {

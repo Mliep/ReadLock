@@ -7,9 +7,11 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.appwidget.AppWidgetManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.PixelFormat;
 import android.os.Handler;
@@ -53,7 +55,7 @@ public class ReadLockService extends Service {
     /** 供无障碍服务/小组件读取的运行时状态 */
     private static volatile boolean locked = false;
     private static volatile long minutesCache = -1;
-    private static volatile boolean overlayAllowed = true;
+    private static volatile boolean exemptForeground = false;
     private static volatile boolean usagePermissionOk = true;
 
     private Handler handler;
@@ -76,6 +78,14 @@ public class ReadLockService extends Service {
         }
     };
 
+    private final BroadcastReceiver timeChangeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            android.util.Log.i("ReadLock", "Timezone or system time changed, refreshing status...");
+            doTick();
+        }
+    };
+
     // ---------- 生命周期 ----------
 
     @Override
@@ -86,6 +96,15 @@ public class ReadLockService extends Service {
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         startForegroundWithNotification();
         scheduleExactAlarms();
+
+        try {
+            IntentFilter tf = new IntentFilter();
+            tf.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+            tf.addAction(Intent.ACTION_TIME_CHANGED);
+            registerReceiver(timeChangeReceiver, tf, Context.RECEIVER_EXPORTED);
+        } catch (Throwable t) {
+            android.util.Log.w("ReadLock", "failed to register timeChangeReceiver", t);
+        }
     }
 
     @Override
@@ -103,6 +122,10 @@ public class ReadLockService extends Service {
 
     @Override
     public void onDestroy() {
+        try {
+            unregisterReceiver(timeChangeReceiver);
+        } catch (Throwable ignored) {
+        }
         handler.removeCallbacksAndMessages(null);
         removeOverlay();
         if (instance == this) {
@@ -129,7 +152,7 @@ public class ReadLockService extends Service {
         boolean shouldLock = usagePermissionOk && shouldLockNow(now, minutes);
         if (shouldLock != locked) {
             locked = shouldLock;
-            overlayAllowed = true;
+            exemptForeground = false;
             if (locked) {
                 addOverlay();
                 Toast.makeText(this, "读书锁：今日未达标，手机已锁定", Toast.LENGTH_LONG).show();
@@ -151,6 +174,7 @@ public class ReadLockService extends Service {
 
         updateNotification(minutes, locked);
         updateWidget(minutes, locked, false);
+        MainActivity.updateFromService(minutes, locked);
         scheduleExactAlarms();
     }
 
@@ -266,6 +290,8 @@ public class ReadLockService extends Service {
     private void addOverlay() {
         if (overlayAdded || !Settings.canDrawOverlays(this)) return;
         overlay = LayoutInflater.from(this).inflate(R.layout.overlay_lock, null);
+        overlay.setClickable(true);
+        overlay.setFocusable(true);
         overlayTitle = overlay.findViewById(R.id.overlay_title);
         overlayCountdown = overlay.findViewById(R.id.overlay_countdown);
         overlayProgress = overlay.findViewById(R.id.overlay_progress);
@@ -275,11 +301,12 @@ public class ReadLockService extends Service {
         Button btnSms = overlay.findViewById(R.id.btn_sms);
         btnRead.setOnClickListener(v -> {
             Intent readIntent = getPackageManager().getLaunchIntentForPackage(READ_PACKAGE);
-            if (readIntent != null) {
-                launch(readIntent);
-            } else {
-                Toast.makeText(this, "未找到微信读书应用，请先安装", Toast.LENGTH_SHORT).show();
+            if (readIntent == null) {
+                readIntent = new Intent(Intent.ACTION_MAIN);
+                readIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+                readIntent.setComponent(new ComponentName(READ_PACKAGE, "com.tencent.weread.LauncherActivity"));
             }
+            launch(readIntent);
         });
         btnCall.setOnClickListener(v -> launch(new Intent(Intent.ACTION_DIAL)));
         btnSms.setOnClickListener(v -> {
@@ -297,6 +324,7 @@ public class ReadLockService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT);
+        overlayLp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         try {
             wm.addView(overlay, overlayLp);
             overlayAdded = true;
@@ -333,24 +361,32 @@ public class ReadLockService extends Service {
     }
 
     /** 由无障碍服务驱动：白名单前台时收起覆盖层，其余时盖回 */
-    public static void setOverlayAllowed(boolean allow) {
-        overlayAllowed = allow;
+    public static void setExemptForeground(boolean exempt) {
+        if (exemptForeground == exempt) return; // 关键防抖！状态无变化直接跳过，杜绝重复刷新引发闪烁
+        exemptForeground = exempt;
         ReadLockService s = instance;
         if (s != null && s.handler != null) {
             s.handler.post(() -> s.applyAllowState());
         }
     }
 
+    public static void setOverlayAllowed(boolean allow) {
+        setExemptForeground(allow);
+    }
+
     private void applyAllowState() {
         if (overlay == null || overlayLp == null || !overlayAdded) return;
         try {
-            if (overlayAllowed) {
-                // 放行：GONE 并开启 NOT_TOUCHABLE，保证完全不拦截底层触摸
-                overlayLp.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            if (exemptForeground) {
+                // 放行：彻底隐形 (alpha=0) 并开启 NOT_TOUCHABLE 与 NOT_FOCUSABLE，释放底层一切操作
+                overlayLp.alpha = 0f;
+                overlayLp.flags |= (WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
                 overlay.setVisibility(View.GONE);
             } else {
-                // 遮挡：VISIBLE 并清除 NOT_TOUCHABLE，全屏拦截
+                // 遮挡：完全不透明 (alpha=1.0) 全屏遮盖并恢复触摸拦截
+                overlayLp.alpha = 1.0f;
                 overlayLp.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+                overlayLp.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
                 overlay.setVisibility(View.VISIBLE);
             }
             wm.updateViewLayout(overlay, overlayLp);
@@ -396,7 +432,7 @@ public class ReadLockService extends Service {
     }
 
     public static boolean isOverlayHidden() {
-        return locked && overlayAllowed;
+        return locked && exemptForeground;
     }
 
     public static boolean isLockedNow() {

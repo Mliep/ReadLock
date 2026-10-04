@@ -5,6 +5,8 @@
     android:orientation="vertical"
     android:gravity="center"
     android:background="@color/overlay_bg"
+    android:clickable="true"
+    android:focusable="true"
     android:padding="32dp">
 
     <TextView

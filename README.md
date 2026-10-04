@@ -45,7 +45,17 @@
   adb shell appops set io.local.readlock ACCESS_RESTRICTED_SETTINGS allow
   adb shell appops set io.local.readlock GET_USAGE_STATS allow
   ```
-- **已优化**：v0.1.1 在主界面权限列表中直接增加了「解除受限设置」一键直达入口，并优化了使用情况访问的一键直跳。
+- **已优化**：在主界面权限列表中直接增加了「解除受限设置」一键直达入口，并优化了使用情况访问的一键直跳。
+
+## v0.1.2 进阶防绕过与体验升级
+
+| 强化项 | 机制与效果 |
+|---|---|
+| **状态栏与控制中心防护** | 锁定期间下拉通知栏或控制中心，无障碍服务秒级执行 `GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE` 强制弹回收起，杜绝通过快捷磁贴绕过 |
+| **严密防护系统设置与权限管理** | 锁定期间严禁进入系统设置、权限管理及安全中心（秒级踢回桌面），杜绝在锁机期间关掉悬浮窗权限、清除数据或强行停止 |
+| **放行状态防抖机制** | 引入 `exemptForeground` 状态对比防抖，避免高频无障碍事件重复刷新覆盖层引发的屏幕闪烁 |
+| **全面屏刘海打孔深度沉浸** | 启用 `LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`，全面屏、挖孔屏全覆盖无死角 |
+| **时钟防篡改即时响应** | 监听系统时间变更与时区切换（`TIME_CHANGED` / `TIMEZONE_CHANGED`），防止通过修改系统时间规避锁机 |
 
 ## adb 一键授权（插电脑执行，一次即可）
 
