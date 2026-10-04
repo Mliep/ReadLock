@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">读书锁</string>
+    <string name="widget_label">读书进度</string>
+    <string name="accessibility_label">读书锁（锁机放行）</string>
+    <string name="accessibility_desc">仅在夜间锁定期间使用：检测来电界面、微信通话界面、微信读书和拨号/短信应用并临时放行，其余场景保持锁定。不联网、不收集数据。</string>
+    <string name="notif_channel">阅读守护</string>
+    <string name="footer">规则：每日微信读书满 30 分钟则当晚自由；22:00 检查，未达标锁定手机至次日 3:00。锁定期间电话、短信、微信通话界面自动放行，微信读书始终可用——补满 30 分钟立即解锁。补救窗口为 22:00–24:00（凌晨读书计入新的一天）。</string>
+</resources>

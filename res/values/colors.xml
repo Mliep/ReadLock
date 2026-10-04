@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#101418</color>
+    <color name="text_primary">#F2F2F2</color>
+    <color name="text_secondary">#9AA3AB</color>
+    <color name="accent">#4C8DFF</color>
+    <color name="good">#3DBB6E</color>
+    <color name="overlay_bg">#E60D1117</color>
+    <color name="widget_bg">#CC1A1F26</color>
+</resources>

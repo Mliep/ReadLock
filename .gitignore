@@ -1,0 +1,15 @@
+# 构建与中间产物
+build/
+*.idsig
+
+# 调试临时文件与截图
+screen*.png
+usage*.png
+*.log
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
